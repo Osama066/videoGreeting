@@ -210,7 +210,7 @@ router.get('/leads/export', async (req, res) => {
       .join('\n');
 
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="sanrachana_ai_leads.csv"');
+    res.setHeader('Content-Disposition', 'attachment; filename="video_greeting_leads.csv"');
     return res.send(headers + rows);
   } catch (error) {
     console.error('[Admin Route] Export leads error:', error);

@@ -30,10 +30,10 @@ export default function GreetingPage() {
           if (!confettiFired.current) {
             confettiFired.current = true;
             confetti({
-              particleCount: 50,
+              particleCount: 40,
               spread: 60,
               origin: { y: 0.6 },
-              colors: ['#6366f1', '#8b5cf6', '#10b981'],
+              colors: ['#2563eb', '#3b82f6', '#60a5fa', '#ffffff'],
             });
           }
         } else if (data.job.status === 'failed') {
@@ -55,7 +55,7 @@ export default function GreetingPage() {
     if (!job) return;
     const greetingUrl = window.location.href;
     const message = encodeURIComponent(
-      `Here is my video greeting from Sanrachana: ${greetingUrl}`
+      `Here is my personalized video greeting: ${greetingUrl}`
     );
     window.open(`https://wa.me/?text=${message}`, '_blank');
   };
@@ -73,7 +73,14 @@ export default function GreetingPage() {
   if (loading) {
     return (
       <div style={{ maxWidth: '480px', margin: '120px auto', textAlign: 'center', padding: '0 24px' }}>
-        <div className="pulse-circle" style={{ width: '28px', height: '28px', background: 'var(--accent-primary)', margin: '0 auto 18px' }} />
+        <div style={{
+          width: '28px',
+          height: '28px',
+          borderRadius: '50%',
+          background: 'var(--accent-primary)',
+          margin: '0 auto 18px',
+          animation: 'pulse 1.5s infinite',
+        }} />
         <p style={{ color: 'var(--text-secondary)' }}>Loading greeting...</p>
       </div>
     );
@@ -109,7 +116,7 @@ export default function GreetingPage() {
 
       <div style={{ textAlign: 'center', marginBottom: '24px' }}>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 700, letterSpacing: '-0.02em', marginBottom: '6px' }}>
-          Greeting for <span style={{ color: 'var(--accent-primary)' }}>{job.userName}</span>
+          Greeting for <span style={{ color: 'var(--accent-light)' }}>{job.userName}</span>
         </h1>
       </div>
 
@@ -157,6 +164,7 @@ export default function GreetingPage() {
             border: '1px solid var(--border-subtle)',
             background: '#000000',
             marginBottom: '20px',
+            boxShadow: '0 8px 30px rgba(0, 0, 0, 0.6)',
           }}>
             <video
               src={job.finalVideoUrl}

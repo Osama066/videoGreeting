@@ -11,11 +11,11 @@ export default function Navbar() {
       zIndex: 50,
       backdropFilter: 'blur(16px)',
       WebkitBackdropFilter: 'blur(16px)',
-      backgroundColor: 'rgba(8, 11, 19, 0.75)',
+      backgroundColor: 'rgba(7, 11, 20, 0.85)',
       borderBottom: '1px solid var(--border-subtle)',
     }}>
       <div style={{
-        maxWidth: '1100px',
+        maxWidth: '1000px',
         margin: '0 auto',
         padding: '14px 24px',
         display: 'flex',
@@ -27,22 +27,22 @@ export default function Navbar() {
           <span style={{
             fontFamily: 'var(--font-heading)',
             fontWeight: 700,
-            fontSize: '1.2rem',
-            letterSpacing: '-0.02em',
-            color: 'var(--text-primary)',
+            fontSize: '1.15rem',
+            letterSpacing: '-0.01em',
+            color: '#ffffff',
           }}>
-            Sanrachana
+            Video Greeting
           </span>
         </Link>
 
         {/* Navigation */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <Link
             to="/"
             style={{
-              fontSize: '0.88rem',
+              fontSize: '0.9rem',
               fontWeight: 500,
-              color: location.pathname === '/' ? 'var(--text-primary)' : 'var(--text-muted)',
+              color: location.pathname === '/' ? '#ffffff' : 'var(--text-muted)',
               transition: 'color 0.2s',
             }}
           >
@@ -52,9 +52,9 @@ export default function Navbar() {
           <Link
             to="/admin"
             style={{
-              fontSize: '0.88rem',
+              fontSize: '0.9rem',
               fontWeight: 500,
-              color: location.pathname.startsWith('/admin') ? 'var(--text-primary)' : 'var(--text-muted)',
+              color: location.pathname.startsWith('/admin') ? '#ffffff' : 'var(--text-muted)',
               transition: 'color 0.2s',
             }}
           >

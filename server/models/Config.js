@@ -19,7 +19,7 @@ const configSchema = new mongoose.Schema(
 );
 
 const DEFAULT_GREETING_TEMPLATE =
-  'Hello {name}! Thank you for connecting with Sanrachana. We are thrilled to welcome you to our community and look forward to building wonderful experiences together!';
+  'Hello {name}! Thank you for connecting with us. We are thrilled to welcome you and look forward to building wonderful experiences together!';
 
 let inMemoryConfig = {
   greetingTemplate: DEFAULT_GREETING_TEMPLATE,

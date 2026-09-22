@@ -27,7 +27,7 @@ export default function App() {
           fontSize: '0.82rem',
         }}>
           <div>
-            © {new Date().getFullYear()} Sanrachana. All rights reserved.
+            © {new Date().getFullYear()} Video Greeting Studio. All rights reserved.
           </div>
         </footer>
       </div>
