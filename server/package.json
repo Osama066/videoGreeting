@@ -1,0 +1,21 @@
+{
+  "name": "ai-video-greeting-server",
+  "version": "1.0.0",
+  "description": "Backend orchestration engine for AI Personalized Video Greeting System",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "cloudinary": "^2.2.0",
+    "cors": "^2.8.5",
+    "csv-writer": "^1.6.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "form-data": "^4.0.0",
+    "mongoose": "^8.3.1",
+    "multer": "^1.4.5-lts.1"
+  }
+}
