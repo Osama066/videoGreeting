@@ -33,3 +33,5 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+Greeting_voice.mp4
+implementation_plan3.md 
