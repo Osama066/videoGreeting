@@ -21,23 +21,13 @@ export default function App() {
 
         <footer style={{
           borderTop: '1px solid var(--border-subtle)',
-          padding: '24px',
+          padding: '16px 24px',
           textAlign: 'center',
           color: 'var(--text-muted)',
-          fontSize: '0.85rem',
-          backgroundColor: 'rgba(6, 9, 15, 0.6)',
+          fontSize: '0.82rem',
         }}>
-          <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-            <div>
-              © {new Date().getFullYear()} <strong>Sanrachana AI</strong>. High-Fidelity Personalized Video Greetings.
-            </div>
-            <div style={{ display: 'flex', gap: '16px' }}>
-              <span>ElevenLabs Cloned TTS</span>
-              <span>•</span>
-              <span>Modal Serverless GPU ($0 Lip-Sync)</span>
-              <span>•</span>
-              <span>Cloudinary CDN</span>
-            </div>
+          <div>
+            © {new Date().getFullYear()} Sanrachana. All rights reserved.
           </div>
         </footer>
       </div>
