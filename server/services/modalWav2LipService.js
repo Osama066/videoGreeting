@@ -10,9 +10,15 @@ const { uploadBuffer, isCloudinaryConfigured } = require('../config/cloudinary')
 const generateLipSyncVideo = async (videoUrl, audioUrl) => {
   const modalEndpoint = process.env.MODAL_WAV2LIP_ENDPOINT;
 
-  if (!modalEndpoint) {
-    console.warn('[Modal Wav2Lip] MODAL_WAV2LIP_ENDPOINT not configured in server/.env.');
-    console.warn('[Modal Wav2Lip] Returning master video URL as fallback for local testing.');
+  const isConfigured = Boolean(
+    modalEndpoint &&
+    !modalEndpoint.includes('your-username') &&
+    modalEndpoint.trim() !== ''
+  );
+
+  if (!isConfigured) {
+    console.warn('[Modal Wav2Lip] MODAL_WAV2LIP_ENDPOINT is not yet configured or contains placeholder (your-username).');
+    console.warn('[Modal Wav2Lip] Returning master video as fallback for testing.');
     return videoUrl;
   }
 
@@ -23,9 +29,10 @@ const generateLipSyncVideo = async (videoUrl, audioUrl) => {
     audio_url: audioUrl,
     pads: '0 10 0 0',
     cloudinary_cloud_name: process.env.CLOUDINARY_CLOUD_NAME || null,
-    cloudinary_api_key: process.env.CLOUDINARY_API_KEY || null,
-    cloudinary_api_secret: process.env.CLOUDINARY_API_SECRET || null,
-    cloudinary_folder: 'ai_greetings/generated_videos',
+    cloudinary_upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET || null,
+    cloudinary_api_key: (process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_KEY !== 'your_cloudinary_api_key') ? process.env.CLOUDINARY_API_KEY : null,
+    cloudinary_api_secret: (process.env.CLOUDINARY_API_SECRET && process.env.CLOUDINARY_API_SECRET !== 'your_cloudinary_api_secret') ? process.env.CLOUDINARY_API_SECRET : null,
+    cloudinary_folder: process.env.CLOUDINARY_FOLDER || 'voice',
   };
 
   try {
@@ -53,11 +60,11 @@ const generateLipSyncVideo = async (videoUrl, audioUrl) => {
     const videoBuffer = Buffer.from(response.data);
 
     if (isCloudinaryConfigured()) {
-      console.log('[Cloudinary] Uploading rendered video to Cloudinary...');
+      const folder = process.env.CLOUDINARY_FOLDER || 'voice';
+      console.log(`[Cloudinary] Uploading rendered video to Cloudinary folder '${folder}'...`);
       const uploadResult = await uploadBuffer(videoBuffer, {
         resource_type: 'video',
-        folder: 'ai_greetings/generated_videos',
-        format: 'mp4',
+        folder: folder,
       });
       console.log(`[Cloudinary] Rendered video uploaded: ${uploadResult.secure_url}`);
       return uploadResult.secure_url;

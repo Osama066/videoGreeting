@@ -36,7 +36,7 @@ app.get('/api/health', (req, res) => {
       database: getIsConnected() ? 'connected' : 'in-memory-fallback',
       cloudinary: isCloudinaryConfigured() ? 'configured' : 'pending',
       elevenLabs: process.env.ELEVENLABS_API_KEY ? 'configured' : 'pending',
-      modalWav2Lip: process.env.MODAL_WAV2LIP_ENDPOINT ? 'configured' : 'pending',
+      modalWav2Lip: (process.env.MODAL_WAV2LIP_ENDPOINT && !process.env.MODAL_WAV2LIP_ENDPOINT.includes('your-username')) ? 'configured' : 'pending',
     },
   });
 });

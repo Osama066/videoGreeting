@@ -30,12 +30,22 @@ const masterVideoSchema = new mongoose.Schema(
   }
 );
 
-// Fallback in-memory storage if MongoDB is not connected
-let inMemoryMasterVideos = [];
+const { loadStore, saveStore } = require('../config/localStore');
+
+// Persistent local storage if MongoDB is not connected
+const store = loadStore();
+let inMemoryMasterVideos = store.masterVideos || [];
+
+const syncMasterVideos = () => {
+  const current = loadStore();
+  current.masterVideos = inMemoryMasterVideos;
+  saveStore(current);
+};
 
 const MasterVideo = mongoose.models.MasterVideo || mongoose.model('MasterVideo', masterVideoSchema);
 
 module.exports = {
   MasterVideo,
   inMemoryMasterVideos,
+  syncMasterVideos,
 };

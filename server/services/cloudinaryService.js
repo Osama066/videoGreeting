@@ -11,13 +11,26 @@ const uploadMasterVideo = async (buffer, originalName) => {
     throw new Error('Cloudinary credentials not configured in server/.env.');
   }
 
-  const cleanTitle = originalName ? originalName.replace(/\.[^/.]+$/, '') : 'master_video';
+  const folder = process.env.CLOUDINARY_FOLDER || 'voice';
+  const hasApiKeys = Boolean(
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_KEY !== 'your_cloudinary_api_key' &&
+    process.env.CLOUDINARY_API_SECRET &&
+    process.env.CLOUDINARY_API_SECRET !== 'your_cloudinary_api_secret'
+  );
 
-  const result = await uploadBuffer(buffer, {
+  const uploadOptions = {
     resource_type: 'video',
-    folder: 'ai_greetings/master_videos',
-    public_id: `${cleanTitle}_${Date.now()}`,
-  });
+    folder,
+  };
+
+  // If signed API keys are available, assign a custom public_id safely
+  if (hasApiKeys) {
+    const cleanTitle = originalName ? originalName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_') : 'master_video';
+    uploadOptions.public_id = `${cleanTitle}_${Date.now()}`;
+  }
+
+  const result = await uploadBuffer(buffer, uploadOptions);
 
   return {
     url: result.secure_url,

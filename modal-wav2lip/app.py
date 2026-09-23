@@ -54,9 +54,10 @@ class LipSyncRequest(BaseModel):
     pads: Optional[str] = "0 10 0 0"  # default padding [top, bottom, left, right]
     resize_factor: Optional[int] = 1
     cloudinary_cloud_name: Optional[str] = None
+    cloudinary_upload_preset: Optional[str] = None
     cloudinary_api_key: Optional[str] = None
     cloudinary_api_secret: Optional[str] = None
-    cloudinary_folder: Optional[str] = "ai_greetings/generated_videos"
+    cloudinary_folder: Optional[str] = "voice"
 
 
 def download_file(url: str, destination: str):
@@ -139,24 +140,32 @@ def generate(req: LipSyncRequest):
 
         # Step 3: Optional direct upload to Cloudinary
         cloud_name = req.cloudinary_cloud_name or os.environ.get("CLOUDINARY_CLOUD_NAME")
+        upload_preset = req.cloudinary_upload_preset or os.environ.get("CLOUDINARY_UPLOAD_PRESET")
         api_key = req.cloudinary_api_key or os.environ.get("CLOUDINARY_API_KEY")
         api_secret = req.cloudinary_api_secret or os.environ.get("CLOUDINARY_API_SECRET")
 
-        if cloud_name and api_key and api_secret:
+        if cloud_name and (upload_preset or (api_key and api_secret)):
             import cloudinary
             import cloudinary.uploader
 
-            cloudinary.config(
-                cloud_name=cloud_name,
-                api_key=api_key,
-                api_secret=api_secret,
-                secure=True,
-            )
+            cfg = {"cloud_name": cloud_name, "secure": True}
+            if api_key and api_secret:
+                cfg["api_key"] = api_key
+                cfg["api_secret"] = api_secret
+            cloudinary.config(**cfg)
+
+            upload_kwargs = {
+                "resource_type": "video",
+                "folder": req.cloudinary_folder or "voice",
+            }
+            if upload_preset:
+                upload_kwargs["upload_preset"] = upload_preset
+                if not (api_key and api_secret):
+                    upload_kwargs["unsigned"] = True
 
             upload_result = cloudinary.uploader.upload(
                 output_video,
-                resource_type="video",
-                folder=req.cloudinary_folder or "ai_greetings/generated_videos",
+                **upload_kwargs,
             )
 
             return {

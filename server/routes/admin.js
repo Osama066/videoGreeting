@@ -1,9 +1,9 @@
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
-const { MasterVideo, inMemoryMasterVideos } = require('../models/MasterVideo');
+const { MasterVideo, inMemoryMasterVideos, syncMasterVideos } = require('../models/MasterVideo');
 const { Job, inMemoryJobs } = require('../models/Job');
-const { Config, DEFAULT_GREETING_TEMPLATE, inMemoryConfig } = require('../models/Config');
+const { Config, DEFAULT_GREETING_TEMPLATE, inMemoryConfig, syncConfig } = require('../models/Config');
 const { getIsConnected } = require('../config/db');
 const { isCloudinaryConfigured } = require('../config/cloudinary');
 const { uploadMasterVideo, deleteAsset } = require('../services/cloudinaryService');
@@ -69,6 +69,7 @@ router.post('/master-video', upload.single('video'), async (req, res) => {
         ...videoData,
       };
       inMemoryMasterVideos.unshift(inMemVideo);
+      syncMasterVideos();
       return res.status(201).json({ success: true, masterVideo: inMemVideo });
     }
   } catch (error) {
@@ -124,6 +125,7 @@ router.post('/master-videos/:id/activate', async (req, res) => {
       if (!found) {
         return res.status(404).json({ success: false, error: 'Master video not found.' });
       }
+      syncMasterVideos();
       return res.json({ success: true, message: 'Master video activated.' });
     }
   } catch (error) {
@@ -151,6 +153,7 @@ router.delete('/master-videos/:id', async (req, res) => {
       const idx = inMemoryMasterVideos.findIndex((v) => v._id === id);
       if (idx !== -1) {
         inMemoryMasterVideos.splice(idx, 1);
+        syncMasterVideos();
       }
     }
     return res.json({ success: true, message: 'Master video deleted successfully.' });
@@ -238,7 +241,7 @@ router.get('/config', async (req, res) => {
         isCloudinaryConfigured: isCloudinaryConfigured(),
         hasElevenLabsKey: Boolean(process.env.ELEVENLABS_API_KEY),
         hasElevenLabsVoice: Boolean(process.env.ELEVENLABS_VOICE_ID),
-        hasModalEndpoint: Boolean(process.env.MODAL_WAV2LIP_ENDPOINT),
+        hasModalEndpoint: Boolean(process.env.MODAL_WAV2LIP_ENDPOINT && !process.env.MODAL_WAV2LIP_ENDPOINT.includes('your-username')),
       },
     });
   } catch (error) {
@@ -275,6 +278,7 @@ router.put('/config', async (req, res) => {
       );
     }
     inMemoryConfig.greetingTemplate = trimmed;
+    syncConfig();
 
     return res.json({
       success: true,

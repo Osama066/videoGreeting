@@ -44,11 +44,11 @@ const generateClonedSpeech = async (text) => {
     const audioBuffer = Buffer.from(response.data);
 
     if (isCloudinaryConfigured()) {
-      console.log('[Cloudinary] Uploading synthesized audio...');
+      const folder = process.env.CLOUDINARY_FOLDER || 'voice';
+      console.log(`[Cloudinary] Uploading synthesized audio to folder '${folder}'...`);
       const uploadResult = await uploadBuffer(audioBuffer, {
         resource_type: 'video', // Cloudinary handles audio files under the video resource type
-        folder: 'ai_greetings/audio',
-        format: 'mp3',
+        folder: folder,
       });
       console.log(`[Cloudinary] Audio uploaded successfully: ${uploadResult.secure_url}`);
       return uploadResult.secure_url;

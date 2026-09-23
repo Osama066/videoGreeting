@@ -49,17 +49,23 @@ export default function Navbar() {
             Home
           </Link>
 
-          <Link
-            to="/admin"
-            style={{
-              fontSize: '0.9rem',
-              fontWeight: 500,
-              color: location.pathname.startsWith('/admin') ? '#ffffff' : 'var(--text-muted)',
-              transition: 'color 0.2s',
-            }}
-          >
-            Admin
-          </Link>
+          {/* Admin badge only visible when directly on /admin */}
+          {location.pathname.startsWith('/admin') && (
+            <span
+              style={{
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                color: 'var(--accent-primary)',
+                background: 'rgba(99, 102, 241, 0.12)',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                letterSpacing: '0.02em',
+              }}
+            >
+              Admin Mode
+            </span>
+          )}
         </nav>
       </div>
     </header>

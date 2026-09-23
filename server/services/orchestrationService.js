@@ -1,4 +1,4 @@
-const { Job, inMemoryJobs } = require('../models/Job');
+const { Job, inMemoryJobs, syncJobs } = require('../models/Job');
 const { MasterVideo, inMemoryMasterVideos } = require('../models/MasterVideo');
 const { Config, DEFAULT_GREETING_TEMPLATE, inMemoryConfig } = require('../models/Config');
 const { getIsConnected } = require('../config/db');
@@ -62,6 +62,7 @@ const updateJob = async (jobId, updates) => {
   if (existing) {
     const updated = { ...existing, ...updates, updatedAt: new Date() };
     inMemoryJobs.set(jobId, updated);
+    syncJobs();
     return updated;
   }
   return null;

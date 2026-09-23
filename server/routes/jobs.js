@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { Job, inMemoryJobs } = require('../models/Job');
+const { Job, inMemoryJobs, syncJobs } = require('../models/Job');
 const { getIsConnected } = require('../config/db');
 const { processGreetingJob } = require('../services/orchestrationService');
 
@@ -56,6 +56,7 @@ router.post('/', async (req, res) => {
       const id = 'mem_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
       savedJob = { _id: id, id, ...jobData };
       inMemoryJobs.set(id, savedJob);
+      syncJobs();
     }
 
     const jobId = savedJob._id ? savedJob._id.toString() : savedJob.id;
