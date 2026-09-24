@@ -106,6 +106,15 @@ def generate(req: LipSyncRequest):
         if not os.path.exists(input_audio) or os.path.getsize(input_audio) == 0:
             raise HTTPException(status_code=400, detail="Failed to download input audio.")
 
+        # Standardize audio to 16kHz mono WAV for Wav2Lip
+        audio_wav = os.path.join(work_dir, "audio_16k.wav")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", input_audio, "-ar", "16000", "-ac", "1", audio_wav],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
         # Step 2: Determine if this is Name-Slot Mode (subclip) or Full Video Mode
         pads_args = req.pads.split() if req.pads else ["0", "10", "0", "0"]
         is_name_slot = (
@@ -146,7 +155,7 @@ def generate(req: LipSyncRequest):
                 "--face",
                 subclip_input,
                 "--audio",
-                input_audio,
+                audio_wav,
                 "--outfile",
                 subclip_synced,
                 "--pads",
@@ -257,7 +266,7 @@ def generate(req: LipSyncRequest):
                 "--face",
                 input_video,
                 "--audio",
-                input_audio,
+                audio_wav,
                 "--outfile",
                 output_video,
                 "--pads",
