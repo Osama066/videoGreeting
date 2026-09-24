@@ -94,10 +94,14 @@ def download_file(url: str, destination: str):
         shutil.copyfileobj(response, out_file)
 
 
-def restore_face_hd(input_video_path: str, output_video_path: str, restorer_type: str = "codeformer", fidelity: float = 0.7):
+def restore_face_hd(input_video_path: str, output_video_path: str, restorer_type: str = "codeformer", fidelity: float = 0.7, audio_source: str = None):
     """
     Restores crisp 1080p facial features (teeth, lips, skin) using CodeFormer or GFPGAN.
+    audio_source: path to the video/audio file to take audio from (defaults to input_video_path).
     """
+    # Use input_video_path as audio source if not specified
+    if audio_source is None:
+        audio_source = input_video_path
     if restorer_type == "codeformer":
         print(f"[HD Restoration] Running CodeFormer (Fidelity w={fidelity})...")
         out_dir = os.path.dirname(output_video_path)
@@ -112,29 +116,37 @@ def restore_face_hd(input_video_path: str, output_video_path: str, restorer_type
         ]
         res = subprocess.run(cmd, cwd="/CodeFormer", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         
-        # Check generated file in results folder
-        result_vid = os.path.join(out_dir, os.path.splitext(os.path.basename(input_video_path))[0] + "_0.7.mp4")
-        if not os.path.exists(result_vid):
-            # Check any mp4 in output directory
-            candidates = [os.path.join(out_dir, f) for f in os.listdir(out_dir) if f.endswith(".mp4") and f != os.path.basename(input_video_path)]
-            if candidates:
-                result_vid = candidates[-1]
+        # Check generated file in results folder — CodeFormer names it with fidelity value
+        base_name = os.path.splitext(os.path.basename(input_video_path))[0]
+        result_vid = None
+        
+        # Search for any new mp4 in the output directory that isn't the input
+        candidates = [
+            os.path.join(out_dir, f) for f in os.listdir(out_dir)
+            if f.endswith(".mp4") and f != os.path.basename(input_video_path) and f != os.path.basename(audio_source)
+        ]
+        if candidates:
+            # Sort by modification time, take most recent
+            candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+            result_vid = candidates[0]
 
-        if os.path.exists(result_vid):
-            # Remux enhanced video with audio from input_video_path
+        if result_vid and os.path.exists(result_vid):
+            print(f"[CodeFormer] Enhanced video found: {result_vid}")
+            # Remux enhanced video with TTS audio from audio_source
             subprocess.run([
                 "ffmpeg", "-y",
                 "-i", result_vid,
-                "-i", input_video_path,
+                "-i", audio_source,
                 "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
                 "-map", "0:v:0",
                 "-map", "1:a:0?",
                 "-c:a", "aac", "-b:a", "192k",
+                "-shortest",
                 output_video_path,
             ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return
 
-        print(f"[CodeFormer] Warning: CodeFormer script output not found ({res.stderr[:200]}), falling back to GFPGAN...")
+        print(f"[CodeFormer] Warning: CodeFormer output not found (stderr: {res.stderr[:300]}), falling back to GFPGAN...")
 
     # GFPGAN Fallback / Selected Restorer
     print("[HD Restoration] Running GFPGAN v1.4...")
@@ -182,15 +194,17 @@ def restore_face_hd(input_video_path: str, output_video_path: str, restorer_type
     cap.release()
     out.release()
 
+    # Remux GFPGAN enhanced video with TTS audio from audio_source (not original video)
     subprocess.run(
         [
             "ffmpeg", "-y",
             "-i", temp_frames_vid,
-            "-i", input_video_path,
+            "-i", audio_source,
             "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
             "-map", "0:v:0",
             "-map", "1:a:0?",
             "-c:a", "aac", "-b:a", "192k",
+            "-shortest",
             output_video_path,
         ],
         check=True,
@@ -432,11 +446,38 @@ def generate(req: LipSyncRequest):
                     detail=f"Wav2Lip inference failed: {error_details}",
                 )
 
+            # Explicitly re-attach TTS audio to Wav2Lip output BEFORE CodeFormer
+            # (Wav2Lip embeds audio but CodeFormer strips it during frame-by-frame processing)
+            raw_full_with_tts = os.path.join(work_dir, "raw_full_with_tts.mp4")
+            subprocess.run([
+                "ffmpeg", "-y",
+                "-i", raw_full_video,
+                "-i", audio_wav,
+                "-c:v", "copy",
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-c:a", "aac", "-b:a", "192k",
+                "-shortest",
+                raw_full_with_tts,
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
             # Apply CodeFormer / GFPGAN HD Face & Teeth Restoration on full video
+            # Pass audio_wav as explicit audio source so TTS audio is always used
             if req.enable_hd_restoration is not False:
-                restore_face_hd(raw_full_video, output_video, restorer_type=restorer, fidelity=fidelity)
+                restore_face_hd(raw_full_with_tts, output_video, restorer_type=restorer, fidelity=fidelity, audio_source=audio_wav)
             else:
-                shutil.copy(raw_full_video, output_video)
+                # Copy with explicit TTS audio
+                subprocess.run([
+                    "ffmpeg", "-y",
+                    "-i", raw_full_with_tts,
+                    "-i", audio_wav,
+                    "-c:v", "copy",
+                    "-map", "0:v:0",
+                    "-map", "1:a:0",
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-shortest",
+                    output_video,
+                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         # Step 3: Optional direct upload to Cloudinary
         cloud_name = req.cloudinary_cloud_name or os.environ.get("CLOUDINARY_CLOUD_NAME")
