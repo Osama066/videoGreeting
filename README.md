@@ -4,6 +4,16 @@ An end-to-end personalized AI video greeting platform that completely eliminates
 
 ---
 
+## 🎬 Video Demo
+
+<div align="center">
+  <video src="example_output.mp4" controls="controls" width="360" style="max-height: 520px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);"></video>
+  <p><sub><em>Sample personalized AI video greeting generated with ElevenLabs cloned voice & serverless Wav2Lip GAN</em></sub></p>
+  <p><a href="example_output.mp4">▶️ <strong>Watch / Download Demo Video (example_output.mp4)</strong></a></p>
+</div>
+
+---
+
 ## 🏗️ Architecture
 
 ```
