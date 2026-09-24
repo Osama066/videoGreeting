@@ -31,9 +31,13 @@ image = (
         "pydantic==2.6.4",
         "requests==2.31.0",
         "cloudinary==1.38.0",
-        "gfpgan==1.3.8",
+        "cython",
+    )
+    .pip_install(
         "facexlib>=0.2.5",
         "basicsr>=1.4.2",
+        "gfpgan==1.3.8",
+        extra_options="--no-build-isolation",
     )
     .run_commands(
         # 1. Clone official Wav2Lip repository
