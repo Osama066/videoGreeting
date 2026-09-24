@@ -36,13 +36,14 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Full Name is required.' });
     }
 
-    if (!userMobile || !userMobile.trim()) {
-      return res.status(400).json({ success: false, error: 'Mobile Number is required.' });
+    const cleanMobile = (userMobile || '').replace(/\D/g, '');
+    if (cleanMobile.length !== 10) {
+      return res.status(400).json({ success: false, error: 'A valid 10-digit mobile number is required.' });
     }
 
     const jobData = {
       userName: userName.trim(),
-      userMobile: userMobile.trim(),
+      userMobile: cleanMobile,
       userEmail: (userEmail || '').trim(),
       status: 'pending',
       createdAt: new Date(),

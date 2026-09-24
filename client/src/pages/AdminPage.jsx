@@ -169,21 +169,6 @@ export default function AdminPage() {
             Manage master greeting videos, script templates, and lead records.
           </p>
         </div>
-
-        {/* System Checklist Badges */}
-        {systemConfig && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            <span className={`badge ${systemConfig.isMongoConnected ? 'badge-success' : 'badge-warning'}`}>
-              DB: {systemConfig.isMongoConnected ? 'Connected' : 'In-Memory'}
-            </span>
-            <span className={`badge ${systemConfig.hasElevenLabsKey ? 'badge-success' : 'badge-warning'}`}>
-              ElevenLabs: {systemConfig.hasElevenLabsKey ? 'Ready' : 'Mock Mode'}
-            </span>
-            <span className={`badge ${systemConfig.hasModalEndpoint ? 'badge-success' : 'badge-warning'}`}>
-              Modal GPU: {systemConfig.hasModalEndpoint ? 'Connected' : 'Pending'}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Tabs */}

@@ -14,10 +14,19 @@ export default function HomePage() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleChange = (e) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
+    const { name, value } = e.target;
+    if (name === 'userMobile') {
+      const digitsOnly = value.replace(/\D/g, '').slice(0, 10);
+      setFormData((prev) => ({
+        ...prev,
+        [name]: digitsOnly,
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
     setErrorMsg('');
   };
 
@@ -29,8 +38,8 @@ export default function HomePage() {
       return;
     }
 
-    if (!formData.userMobile.trim() || formData.userMobile.trim().length < 8) {
-      setErrorMsg('Please enter a valid mobile number.');
+    if (formData.userMobile.length !== 10) {
+      setErrorMsg('Please enter a valid 10-digit mobile number.');
       return;
     }
 
@@ -123,8 +132,11 @@ export default function HomePage() {
                 id="userMobile"
                 name="userMobile"
                 type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                pattern="[0-9]{10}"
                 className="form-input"
-                placeholder="Enter your mobile number"
+                placeholder="Enter 10-digit mobile number"
                 value={formData.userMobile}
                 onChange={handleChange}
                 required

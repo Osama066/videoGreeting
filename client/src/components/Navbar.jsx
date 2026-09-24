@@ -37,18 +37,6 @@ export default function Navbar() {
 
         {/* Navigation */}
         <nav style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <Link
-            to="/"
-            style={{
-              fontSize: '0.9rem',
-              fontWeight: 500,
-              color: location.pathname === '/' ? '#ffffff' : 'var(--text-muted)',
-              transition: 'color 0.2s',
-            }}
-          >
-            Home
-          </Link>
-
           {/* Admin badge only visible when directly on /admin */}
           {location.pathname.startsWith('/admin') && (
             <span
