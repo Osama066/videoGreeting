@@ -5,9 +5,10 @@ const { uploadBuffer, isCloudinaryConfigured } = require('../config/cloudinary')
  * Dispatches a lip-sync generation job to the Modal Wav2Lip serverless worker.
  * @param {string} videoUrl - Public URL of the master talking head video.
  * @param {string} audioUrl - Public URL of the synthesized ElevenLabs audio.
+ * @param {object} options - Optional timing and rendering options (startTime, endTime, pads, resizeFactor).
  * @returns {Promise<string>} Public URL of the synchronized final video.
  */
-const generateLipSyncVideo = async (videoUrl, audioUrl) => {
+const generateLipSyncVideo = async (videoUrl, audioUrl, options = {}) => {
   const modalEndpoint = process.env.MODAL_WAV2LIP_ENDPOINT;
 
   const isConfigured = Boolean(
@@ -22,12 +23,15 @@ const generateLipSyncVideo = async (videoUrl, audioUrl) => {
     return videoUrl;
   }
 
-  console.log(`[Modal Wav2Lip] Dispatching lip-sync request to: ${modalEndpoint}`);
+  console.log(`[Modal Wav2Lip] Dispatching lip-sync request to: ${modalEndpoint}`, options);
 
   const payload = {
     video_url: videoUrl,
     audio_url: audioUrl,
-    pads: '0 10 0 0',
+    start_time: typeof options.startTime === 'number' ? options.startTime : null,
+    end_time: typeof options.endTime === 'number' ? options.endTime : null,
+    pads: options.pads || '0 10 0 0',
+    resize_factor: options.resizeFactor || 1,
     cloudinary_cloud_name: process.env.CLOUDINARY_CLOUD_NAME || null,
     cloudinary_upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET || null,
     cloudinary_api_key: (process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_KEY !== 'your_cloudinary_api_key') ? process.env.CLOUDINARY_API_KEY : null,

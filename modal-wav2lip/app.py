@@ -51,6 +51,8 @@ app = modal.App("ai-greeting-wav2lip")
 class LipSyncRequest(BaseModel):
     video_url: str
     audio_url: str
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
     pads: Optional[str] = "0 10 0 0"  # default padding [top, bottom, left, right]
     resize_factor: Optional[int] = 1
     cloudinary_cloud_name: Optional[str] = None
@@ -80,9 +82,10 @@ def download_file(url: str, destination: str):
 def generate(req: LipSyncRequest):
     """
     Generates lip-synced video using Wav2Lip GAN on serverless GPU.
-    Accepts video_url & audio_url, renders output, and returns either:
-    - Direct Cloudinary secure URL (if Cloudinary credentials supplied)
-    - Raw MP4 binary stream
+    Supports both:
+    1. Name-Slot Mode: Slices video to [start_time, end_time], animates only that snippet,
+       and stitches back into original video for crystal-clear quality and 10x faster rendering.
+    2. Full Script Mode: Animates the entire video.
     """
     if not req.video_url or not req.audio_url:
         raise HTTPException(status_code=400, detail="video_url and audio_url are required.")
@@ -103,40 +106,181 @@ def generate(req: LipSyncRequest):
         if not os.path.exists(input_audio) or os.path.getsize(input_audio) == 0:
             raise HTTPException(status_code=400, detail="Failed to download input audio.")
 
-        # Step 2: Run Wav2Lip inference
+        # Step 2: Determine if this is Name-Slot Mode (subclip) or Full Video Mode
         pads_args = req.pads.split() if req.pads else ["0", "10", "0", "0"]
-        cmd = [
-            "python",
-            "/Wav2Lip/inference.py",
-            "--checkpoint_path",
-            "/Wav2Lip/checkpoints/wav2lip_gan.pth",
-            "--face",
-            input_video,
-            "--audio",
-            input_audio,
-            "--outfile",
-            output_video,
-            "--pads",
-            *pads_args,
-            "--resize_factor",
-            str(req.resize_factor or 1),
-            "--nosmooth",
-        ]
-
-        result = subprocess.run(
-            cmd,
-            cwd="/Wav2Lip",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+        is_name_slot = (
+            req.start_time is not None
+            and req.end_time is not None
+            and req.end_time > req.start_time
         )
 
-        if result.returncode != 0 or not os.path.exists(output_video):
-            error_details = result.stderr[-1000:] if result.stderr else "Unknown error"
-            raise HTTPException(
-                status_code=500,
-                detail=f"Wav2Lip inference failed: {error_details}",
+        if is_name_slot:
+            print(f"[Modal] Running Name-Slot Mode from {req.start_time}s to {req.end_time}s")
+            subclip_input = os.path.join(work_dir, "subclip_raw.mp4")
+            subclip_synced = os.path.join(work_dir, "subclip_synced.mp4")
+            part1_file = os.path.join(work_dir, "part1.mp4")
+            part3_file = os.path.join(work_dir, "part3.mp4")
+
+            # Cut slot subclip to lip-sync
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-ss", str(req.start_time),
+                    "-to", str(req.end_time),
+                    "-i", input_video,
+                    "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
+                    "-an",
+                    subclip_input,
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+
+            # Run Wav2Lip inference ONLY on the small slot subclip (~48 frames)
+            cmd = [
+                "python",
+                "/Wav2Lip/inference.py",
+                "--checkpoint_path",
+                "/Wav2Lip/checkpoints/wav2lip_gan.pth",
+                "--face",
+                subclip_input,
+                "--audio",
+                input_audio,
+                "--outfile",
+                subclip_synced,
+                "--pads",
+                *pads_args,
+                "--resize_factor",
+                str(req.resize_factor or 1),
+                "--nosmooth",
+            ]
+
+            result = subprocess.run(
+                cmd,
+                cwd="/Wav2Lip",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            if result.returncode != 0 or not os.path.exists(subclip_synced):
+                error_details = result.stderr[-1000:] if result.stderr else "Unknown error"
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Wav2Lip slot inference failed: {error_details}",
+                )
+
+            # Re-encode subclip with standardized audio stream
+            subclip_synced_clean = os.path.join(work_dir, "subclip_clean.mp4")
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-i", subclip_synced,
+                    "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                    subclip_synced_clean,
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            concat_files = []
+
+            # Part 1 (Before name slot)
+            if req.start_time > 0.05:
+                subprocess.run(
+                    [
+                        "ffmpeg", "-y",
+                        "-ss", "0",
+                        "-to", str(req.start_time),
+                        "-i", input_video,
+                        "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                        part1_file,
+                    ],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                concat_files.append(part1_file)
+
+            # Part 2 (Synced Name Slot)
+            concat_files.append(subclip_synced_clean)
+
+            # Part 3 (After name slot to end of video)
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-ss", str(req.end_time),
+                    "-i", input_video,
+                    "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                    part3_file,
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            concat_files.append(part3_file)
+
+            # Concat demuxer list
+            concat_list_path = os.path.join(work_dir, "concat.txt")
+            with open(concat_list_path, "w") as f:
+                for path in concat_files:
+                    f.write(f"file '{path}'\n")
+
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", concat_list_path,
+                    "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                    output_video,
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        else:
+            # Full Video Mode: Run inference on whole video
+            print("[Modal] Running Full Video Mode...")
+            cmd = [
+                "python",
+                "/Wav2Lip/inference.py",
+                "--checkpoint_path",
+                "/Wav2Lip/checkpoints/wav2lip_gan.pth",
+                "--face",
+                input_video,
+                "--audio",
+                input_audio,
+                "--outfile",
+                output_video,
+                "--pads",
+                *pads_args,
+                "--resize_factor",
+                str(req.resize_factor or 1),
+                "--nosmooth",
+            ]
+
+            result = subprocess.run(
+                cmd,
+                cwd="/Wav2Lip",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            if result.returncode != 0 or not os.path.exists(output_video):
+                error_details = result.stderr[-1000:] if result.stderr else "Unknown error"
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Wav2Lip inference failed: {error_details}",
+                )
 
         # Step 3: Optional direct upload to Cloudinary
         cloud_name = req.cloudinary_cloud_name or os.environ.get("CLOUDINARY_CLOUD_NAME")

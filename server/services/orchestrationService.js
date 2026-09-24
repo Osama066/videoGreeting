@@ -2,7 +2,7 @@ const { Job, inMemoryJobs, syncJobs } = require('../models/Job');
 const { MasterVideo, inMemoryMasterVideos } = require('../models/MasterVideo');
 const { Config, DEFAULT_GREETING_TEMPLATE, inMemoryConfig } = require('../models/Config');
 const { getIsConnected } = require('../config/db');
-const { generateClonedSpeech } = require('./elevenLabsService');
+const { generateClonedSpeech, generateNameSnippetSpeech } = require('./elevenLabsService');
 const { generateLipSyncVideo } = require('./modalWav2LipService');
 
 /**
@@ -21,18 +21,18 @@ const getGreetingTemplate = async () => {
 };
 
 /**
- * Retrieves the active master video URL.
+ * Retrieves the active master video object.
  */
-const getActiveMasterVideoUrl = async () => {
+const getActiveMasterVideo = async () => {
   if (getIsConnected()) {
     try {
       // 1. First look for active master video
       let master = await MasterVideo.findOne({ isActive: true });
-      if (master) return master.cloudinaryUrl;
+      if (master) return master;
 
       // 2. Otherwise fall back to latest uploaded video
       master = await MasterVideo.findOne().sort({ createdAt: -1 });
-      if (master) return master.cloudinaryUrl;
+      if (master) return master;
     } catch (err) {
       console.warn('[Orchestration] Error fetching master video from DB:', err.message);
     }
@@ -40,10 +40,17 @@ const getActiveMasterVideoUrl = async () => {
 
   // Check in-memory fallback
   const activeInMemory = inMemoryMasterVideos.find((v) => v.isActive) || inMemoryMasterVideos[0];
-  if (activeInMemory) return activeInMemory.cloudinaryUrl;
+  if (activeInMemory) return activeInMemory;
 
-  // Default sample video URL if no master video has been uploaded yet
-  return 'https://res.cloudinary.com/demo/video/upload/dog.mp4';
+  // Default fallback sample video if none exists
+  return {
+    cloudinaryUrl: 'https://res.cloudinary.com/dfyrmbgia/video/upload/v1790180798/voice/atfqdgfmpwgmy7g0ky57.mp4',
+    mode: 'name_slot',
+    nameSlotStart: 1.0,
+    nameSlotEnd: 2.6,
+    prefixPhrase: 'Hello',
+    suffixPhrase: '',
+  };
 };
 
 /**
@@ -88,37 +95,75 @@ const processGreetingJob = async (jobId) => {
   }
 
   try {
-    // 1. Prepare personalized text
-    const template = await getGreetingTemplate();
-    const personalizedText = template.replace(/\{name\}/gi, job.userName.trim());
-    await updateJob(jobId, {
-      greetingText: personalizedText,
-      status: 'generating_voice',
-    });
+    const masterVideo = await getActiveMasterVideo();
+    const mode = masterVideo.mode || 'name_slot';
+    console.log(`[Orchestration] Master video mode: ${mode} (Start: ${masterVideo.nameSlotStart}s, End: ${masterVideo.nameSlotEnd}s)`);
 
-    // 2. Synthesize Cloned Voice Audio via ElevenLabs
-    console.log(`[Orchestration] Generating voice for: ${job.userName}`);
-    const audioUrl = await generateClonedSpeech(personalizedText);
-    await updateJob(jobId, {
-      audioUrl,
-      status: 'generating_lipsync',
-    });
+    let audioUrl = '';
+    let spokenText = '';
 
-    // 3. Obtain Master Video URL
-    const masterVideoUrl = await getActiveMasterVideoUrl();
-    await updateJob(jobId, { masterVideoUrl });
+    if (mode === 'name_slot') {
+      // 1. Name-Slot Mode: Generate ONLY name snippet speech (saves ~90% cost)
+      const prefix = masterVideo.prefixPhrase !== undefined ? masterVideo.prefixPhrase : 'Hello';
+      const suffix = masterVideo.suffixPhrase || '';
+      console.log(`[Orchestration] Generating Name Snippet for: ${job.userName} (Prefix: "${prefix}")`);
+      
+      const snippetResult = await generateNameSnippetSpeech(job.userName, prefix, suffix);
+      audioUrl = snippetResult.audioUrl;
+      spokenText = snippetResult.snippetText;
 
-    // 4. Generate Lip-Synced Video via Modal Wav2Lip Worker
-    console.log(`[Orchestration] Generating Wav2Lip lip-sync video...`);
-    const finalVideoUrl = await generateLipSyncVideo(masterVideoUrl, audioUrl);
+      await updateJob(jobId, {
+        greetingText: spokenText,
+        masterVideoUrl: masterVideo.cloudinaryUrl,
+        audioUrl,
+        status: 'generating_lipsync',
+      });
 
-    // 5. Complete Job
-    await updateJob(jobId, {
-      finalVideoUrl,
-      status: 'completed',
-      completedAt: new Date(),
-    });
-    console.log(`[Orchestration] Job ${jobId} completed successfully! Video: ${finalVideoUrl}`);
+      // 2. Generate Lip-Synced subclip & stitch seamlessly
+      console.log(`[Orchestration] Generating targeted Wav2Lip slot [${masterVideo.nameSlotStart}s - ${masterVideo.nameSlotEnd}s]...`);
+      const finalVideoUrl = await generateLipSyncVideo(masterVideo.cloudinaryUrl, audioUrl, {
+        startTime: typeof masterVideo.nameSlotStart === 'number' ? masterVideo.nameSlotStart : 1.0,
+        endTime: typeof masterVideo.nameSlotEnd === 'number' ? masterVideo.nameSlotEnd : 2.6,
+      });
+
+      // 3. Complete Job
+      await updateJob(jobId, {
+        finalVideoUrl,
+        status: 'completed',
+        completedAt: new Date(),
+      });
+      console.log(`[Orchestration] Job ${jobId} (Name-Slot) completed successfully! Video: ${finalVideoUrl}`);
+
+    } else {
+      // Full Script Mode: Legacy / Fallback mode
+      const template = await getGreetingTemplate();
+      spokenText = template.replace(/\{name\}/gi, job.userName.trim());
+
+      await updateJob(jobId, {
+        greetingText: spokenText,
+        status: 'generating_voice',
+      });
+
+      console.log(`[Orchestration] Generating full voice for: ${job.userName}`);
+      audioUrl = await generateClonedSpeech(spokenText);
+
+      await updateJob(jobId, {
+        audioUrl,
+        masterVideoUrl: masterVideo.cloudinaryUrl,
+        status: 'generating_lipsync',
+      });
+
+      console.log(`[Orchestration] Generating full Wav2Lip video...`);
+      const finalVideoUrl = await generateLipSyncVideo(masterVideo.cloudinaryUrl, audioUrl);
+
+      await updateJob(jobId, {
+        finalVideoUrl,
+        status: 'completed',
+        completedAt: new Date(),
+      });
+      console.log(`[Orchestration] Job ${jobId} (Full Video) completed successfully! Video: ${finalVideoUrl}`);
+    }
+
   } catch (error) {
     console.error(`[Orchestration] Pipeline failed for Job ${jobId}:`, error);
     await updateJob(jobId, {
@@ -131,5 +176,5 @@ const processGreetingJob = async (jobId) => {
 module.exports = {
   processGreetingJob,
   getGreetingTemplate,
-  getActiveMasterVideoUrl,
+  getActiveMasterVideo,
 };

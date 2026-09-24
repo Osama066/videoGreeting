@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   UploadCloud,
   Film,
@@ -11,8 +11,12 @@ import {
   FileText,
   Save,
   Play,
+  Pause,
   RefreshCw,
   ExternalLink,
+  Zap,
+  Clock,
+  Check,
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -26,8 +30,15 @@ export default function AdminPage() {
   // Upload master video state
   const [uploadFile, setUploadFile] = useState(null);
   const [videoTitle, setVideoTitle] = useState('');
+  const [uploadMode, setUploadMode] = useState('name_slot');
+  const [uploadSlotStart, setUploadSlotStart] = useState(1.0);
+  const [uploadSlotEnd, setUploadSlotEnd] = useState(2.6);
+  const [uploadPrefix, setUploadPrefix] = useState('Hello');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+
+  // Editing state for existing videos: map of videoId -> { mode, nameSlotStart, nameSlotEnd, prefixPhrase, suffixPhrase, saving, saveMsg }
+  const [videoEdits, setVideoEdits] = useState({});
 
   // Leads search
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,6 +92,10 @@ export default function AdminPage() {
     if (videoTitle.trim()) {
       formData.append('title', videoTitle.trim());
     }
+    formData.append('mode', uploadMode);
+    formData.append('nameSlotStart', uploadSlotStart);
+    formData.append('nameSlotEnd', uploadSlotEnd);
+    formData.append('prefixPhrase', uploadPrefix);
 
     try {
       const res = await fetch('/api/admin/master-video', {
@@ -98,6 +113,26 @@ export default function AdminPage() {
       setUploadError(err.message);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  // Update video timing and mode settings
+  const handleUpdateVideoSettings = async (id, settings) => {
+    try {
+      const res = await fetch(`/api/admin/master-videos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update video settings.');
+      }
+      fetchData();
+      return true;
+    } catch (err) {
+      alert('Error updating settings: ' + err.message);
+      return false;
     }
   };
 
@@ -272,6 +307,63 @@ export default function AdminPage() {
                 />
               </div>
 
+              <div className="form-group">
+                <label className="form-label">Generation Mode</label>
+                <select
+                  className="form-input"
+                  value={uploadMode}
+                  onChange={(e) => setUploadMode(e.target.value)}
+                >
+                  <option value="name_slot">⚡ Name-Slot Mode (~90% Cheaper & 10x Faster)</option>
+                  <option value="full_video">Full Script Mode (Rerenders entire video)</option>
+                </select>
+              </div>
+
+              {uploadMode === 'name_slot' && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '14px', borderRadius: 'var(--radius-sm)', marginBottom: '16px', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--accent-primary)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Clock size={14} />
+                    <span>Name Slot Timing & Prefix</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.78rem' }}>Start Time (s)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        className="form-input"
+                        value={uploadSlotStart}
+                        onChange={(e) => setUploadSlotStart(parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.78rem' }}>End Time (s)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        className="form-input"
+                        value={uploadSlotEnd}
+                        onChange={(e) => setUploadSlotEnd(parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.78rem' }}>Spoken Prefix Phrase</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Hello"
+                      value={uploadPrefix}
+                      onChange={(e) => setUploadPrefix(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
               <button
                 type="submit"
                 className="btn-primary"
@@ -297,7 +389,7 @@ export default function AdminPage() {
           <div>
             <h2 style={{ fontSize: '1.2rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Film size={20} color="var(--accent-secondary)" />
-              <span>Available Master Videos</span>
+              <span>Configured Master Videos</span>
             </h2>
 
             {masterVideos.length === 0 ? (
@@ -307,47 +399,15 @@ export default function AdminPage() {
                 <p style={{ fontSize: '0.82rem', marginTop: '4px' }}>Upload your first video on the left to get started.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {masterVideos.map((video) => (
-                  <div key={video._id || video.id} className="glass-panel" style={{ padding: '20px', display: 'flex', gap: '16px', alignItems: 'center' }}>
-                    <div style={{ width: '120px', height: '70px', borderRadius: 'var(--radius-sm)', overflow: 'hidden', background: '#000', flexShrink: 0 }}>
-                      <video src={video.cloudinaryUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted />
-                    </div>
-
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: 600, fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {video.title}
-                        </span>
-                        {video.isActive && (
-                          <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Active</span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                        {video.duration ? `${Math.round(video.duration)}s` : 'Video'} • {new Date(video.createdAt).toLocaleDateString()}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                      {!video.isActive && (
-                        <button
-                          onClick={() => handleActivateVideo(video._id || video.id)}
-                          className="btn-secondary"
-                          style={{ padding: '8px 12px', fontSize: '0.8rem' }}
-                        >
-                          Activate
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDeleteVideo(video._id || video.id)}
-                        className="btn-secondary"
-                        style={{ padding: '8px 10px', color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
-                        title="Delete video"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
+                  <MasterVideoCard
+                    key={video._id || video.id}
+                    video={video}
+                    onActivate={() => handleActivateVideo(video._id || video.id)}
+                    onDelete={() => handleDeleteVideo(video._id || video.id)}
+                    onSaveSettings={(settings) => handleUpdateVideoSettings(video._id || video.id, settings)}
+                  />
                 ))}
               </div>
             )}
@@ -502,6 +562,237 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Interactive Master Video Card with live segment preview and timing editor
+ */
+function MasterVideoCard({ video, onActivate, onDelete, onSaveSettings }) {
+  const [mode, setMode] = useState(video.mode || 'name_slot');
+  const [start, setStart] = useState(video.nameSlotStart !== undefined ? video.nameSlotStart : 1.0);
+  const [end, setEnd] = useState(video.nameSlotEnd !== undefined ? video.nameSlotEnd : 2.6);
+  const [prefix, setPrefix] = useState(video.prefixPhrase !== undefined ? video.prefixPhrase : 'Hello');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isPlayingSlot, setIsPlayingSlot] = useState(false);
+
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    setMode(video.mode || 'name_slot');
+    setStart(video.nameSlotStart !== undefined ? video.nameSlotStart : 1.0);
+    setEnd(video.nameSlotEnd !== undefined ? video.nameSlotEnd : 2.6);
+    setPrefix(video.prefixPhrase !== undefined ? video.prefixPhrase : 'Hello');
+  }, [video]);
+
+  const handlePlaySlot = () => {
+    if (!videoRef.current) return;
+    const v = videoRef.current;
+    v.currentTime = start;
+    v.play();
+    setIsPlayingSlot(true);
+
+    const onTimeUpdate = () => {
+      if (v.currentTime >= end) {
+        v.pause();
+        v.removeEventListener('timeupdate', onTimeUpdate);
+        setIsPlayingSlot(false);
+      }
+    };
+    v.addEventListener('timeupdate', onTimeUpdate);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    const success = await onSaveSettings({
+      mode,
+      nameSlotStart: start,
+      nameSlotEnd: end,
+      prefixPhrase: prefix,
+    });
+    setIsSaving(false);
+    if (success) {
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    }
+  };
+
+  const isSlotMode = mode === 'name_slot';
+
+  return (
+    <div className="glass-panel" style={{ padding: '24px' }}>
+      {/* Top Header */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+            <span style={{ fontWeight: 700, fontSize: '1.05rem', color: '#ffffff' }}>
+              {video.title}
+            </span>
+            {video.isActive && (
+              <span className="badge badge-success" style={{ fontSize: '0.72rem' }}>Active Master</span>
+            )}
+            {isSlotMode ? (
+              <span className="badge badge-info" style={{ fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <Zap size={11} /> Name-Slot Mode
+              </span>
+            ) : (
+              <span className="badge badge-warning" style={{ fontSize: '0.72rem' }}>Full Video Mode</span>
+            )}
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            Duration: {video.duration ? `${Math.round(video.duration)}s` : '—'} • Created {new Date(video.createdAt).toLocaleDateString()}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {!video.isActive && (
+            <button
+              onClick={onActivate}
+              className="btn-secondary"
+              style={{ padding: '6px 14px', fontSize: '0.82rem' }}
+            >
+              Set as Active
+            </button>
+          )}
+          <button
+            onClick={onDelete}
+            className="btn-secondary"
+            style={{ padding: '6px 10px', color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+            title="Delete video"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Grid: Video Player + Settings */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 260px) 1fr', gap: '20px', alignItems: 'start' }}>
+        {/* Video Box */}
+        <div>
+          <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', background: '#000', border: '1px solid var(--border-subtle)' }}>
+            <video
+              ref={videoRef}
+              src={video.cloudinaryUrl}
+              controls
+              style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '180px', objectFit: 'cover' }}
+            />
+          </div>
+
+          {isSlotMode && (
+            <button
+              type="button"
+              onClick={handlePlaySlot}
+              className="btn-secondary"
+              disabled={isPlayingSlot}
+              style={{
+                width: '100%',
+                marginTop: '8px',
+                padding: '6px 10px',
+                fontSize: '0.78rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                color: 'var(--accent-primary)',
+                borderColor: 'rgba(99, 102, 241, 0.4)',
+              }}
+            >
+              <Play size={13} />
+              <span>{isPlayingSlot ? 'Playing Slot...' : `Preview Slot (${start}s - ${end}s)`}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Configuration Controls */}
+        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+          <div className="form-group" style={{ marginBottom: '12px' }}>
+            <label className="form-label" style={{ fontSize: '0.8rem' }}>Generation Mode</label>
+            <select
+              className="form-input"
+              style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+            >
+              <option value="name_slot">⚡ Name-Slot Mode (Fast ~3s & 90% Cost Reduction)</option>
+              <option value="full_video">Full Script Mode (Rerender whole video ~25s)</option>
+            </select>
+          </div>
+
+          {isSlotMode && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.76rem' }}>Name Slot Start (seconds)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    className="form-input"
+                    style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                    value={start}
+                    onChange={(e) => setStart(parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.76rem' }}>Name Slot End (seconds)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    className="form-input"
+                    style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                    value={end}
+                    onChange={(e) => setEnd(parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '0.76rem' }}>Spoken Prefix Phrase (Before Name)</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                  placeholder="e.g. Hello"
+                  value={prefix}
+                  onChange={(e) => setPrefix(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Save Changes Button */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px', marginTop: '14px' }}>
+            {saveSuccess && (
+              <span style={{ fontSize: '0.8rem', color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <Check size={14} /> Saved!
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="btn-primary"
+              style={{ padding: '8px 16px', fontSize: '0.84rem', gap: '6px' }}
+            >
+              {isSaving ? (
+                <>
+                  <RefreshCw size={13} style={{ animation: 'spin 1.5s linear infinite' }} />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Save size={13} />
+                  <span>Save Video Settings</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

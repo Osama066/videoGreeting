@@ -69,6 +69,30 @@ const generateClonedSpeech = async (text) => {
   }
 };
 
+/**
+ * Generates audio only for the name snippet (e.g. "Hello Rahul!").
+ * Consumes ~90% fewer characters than synthesizing an entire script.
+ * @param {string} name - Visitor's name.
+ * @param {string} prefixPhrase - Optional prefix, e.g. "Hello".
+ * @param {string} suffixPhrase - Optional suffix phrase.
+ * @returns {Promise<{ audioUrl: string, snippetText: string }>}
+ */
+const generateNameSnippetSpeech = async (name, prefixPhrase = 'Hello', suffixPhrase = '') => {
+  const parts = [];
+  if (prefixPhrase && prefixPhrase.trim()) {
+    parts.push(prefixPhrase.trim());
+  }
+  parts.push(name.trim());
+  if (suffixPhrase && suffixPhrase.trim()) {
+    parts.push(suffixPhrase.trim());
+  }
+  const snippetText = parts.join(' ') + '!';
+  console.log(`[ElevenLabs] Synthesizing short name snippet: "${snippetText}"`);
+  const audioUrl = await generateClonedSpeech(snippetText);
+  return { audioUrl, snippetText };
+};
+
 module.exports = {
   generateClonedSpeech,
+  generateNameSnippetSpeech,
 };

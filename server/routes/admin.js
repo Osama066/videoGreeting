@@ -46,11 +46,22 @@ router.post('/master-video', upload.single('video'), async (req, res) => {
       };
     }
 
+    const mode = req.body.mode === 'full_video' ? 'full_video' : 'name_slot';
+    const nameSlotStart = req.body.nameSlotStart !== undefined ? parseFloat(req.body.nameSlotStart) : 1.0;
+    const nameSlotEnd = req.body.nameSlotEnd !== undefined ? parseFloat(req.body.nameSlotEnd) : 2.6;
+    const prefixPhrase = req.body.prefixPhrase !== undefined ? req.body.prefixPhrase : 'Hello';
+    const suffixPhrase = req.body.suffixPhrase || '';
+
     const videoData = {
       title,
       cloudinaryUrl: uploadedAsset.url,
       cloudinaryPublicId: uploadedAsset.publicId,
       duration: uploadedAsset.duration,
+      mode,
+      nameSlotStart: isNaN(nameSlotStart) ? 1.0 : nameSlotStart,
+      nameSlotEnd: isNaN(nameSlotEnd) ? 2.6 : nameSlotEnd,
+      prefixPhrase,
+      suffixPhrase,
       isActive: true, // Auto-activate newly uploaded master video
       createdAt: new Date(),
     };
@@ -130,6 +141,44 @@ router.post('/master-videos/:id/activate', async (req, res) => {
     }
   } catch (error) {
     console.error('[Admin Route] Activate master video error:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * PUT /api/admin/master-videos/:id
+ * Update settings (mode, nameSlotStart, nameSlotEnd, prefixPhrase, suffixPhrase, title) for a master video
+ */
+router.put('/master-videos/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, mode, nameSlotStart, nameSlotEnd, prefixPhrase, suffixPhrase } = req.body;
+
+    const updates = {};
+    if (title !== undefined) updates.title = title.trim();
+    if (mode !== undefined) updates.mode = mode === 'full_video' ? 'full_video' : 'name_slot';
+    if (nameSlotStart !== undefined) updates.nameSlotStart = parseFloat(nameSlotStart);
+    if (nameSlotEnd !== undefined) updates.nameSlotEnd = parseFloat(nameSlotEnd);
+    if (prefixPhrase !== undefined) updates.prefixPhrase = prefixPhrase.trim();
+    if (suffixPhrase !== undefined) updates.suffixPhrase = suffixPhrase.trim();
+
+    if (getIsConnected()) {
+      const updated = await MasterVideo.findByIdAndUpdate(id, updates, { new: true });
+      if (!updated) {
+        return res.status(404).json({ success: false, error: 'Master video not found.' });
+      }
+      return res.json({ success: true, masterVideo: updated });
+    } else {
+      const video = inMemoryMasterVideos.find((v) => v._id === id);
+      if (!video) {
+        return res.status(404).json({ success: false, error: 'Master video not found.' });
+      }
+      Object.assign(video, updates);
+      syncMasterVideos();
+      return res.json({ success: true, masterVideo: video });
+    }
+  } catch (error) {
+    console.error('[Admin Route] Update master video error:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 });
