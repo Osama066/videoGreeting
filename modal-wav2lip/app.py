@@ -12,8 +12,8 @@ from pydantic import BaseModel
 # ---------------------------------------------------------------------------
 # Modal Container Image Definition
 # ---------------------------------------------------------------------------
-# Pre-bakes dependencies, clones Wav2Lip, downloads GFPGAN v1.4 weights,
-# and caches face restoration models for fast GPU execution.
+# Pre-bakes dependencies, clones Wav2Lip, CodeFormer, and GFPGAN v1.4,
+# downloading all model checkpoints during image build for fast cold-starts.
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install("git", "ffmpeg", "libgl1-mesa-glx", "libglib2.0-0", "curl")
@@ -40,17 +40,24 @@ image = (
         extra_options="--no-build-isolation",
     )
     .run_commands(
-        # 1. Clone official Wav2Lip repository
+        # 1. Clone official Wav2Lip repository & download checkpoints
         "git clone https://github.com/Rudrabha/Wav2Lip.git /Wav2Lip",
-        # 2. Create directory for face detection & checkpoints
         "mkdir -p /Wav2Lip/face_detection/detection/sfd",
         "mkdir -p /Wav2Lip/checkpoints",
-        "mkdir -p /root/.cache/facexlib/weights",
-        # 3. Download S3FD Face Detection weights
         "curl -L -o /Wav2Lip/face_detection/detection/sfd/s3fd.pth https://huggingface.co/camenduru/Wav2Lip/resolve/main/face_detection/detection/sfd/s3fd.pth",
-        # 4. Download Pre-trained Wav2Lip GAN weights (High-fidelity lip sync)
         "curl -L -o /Wav2Lip/checkpoints/wav2lip_gan.pth https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/wav2lip_gan.pth",
-        # 5. Download GFPGAN v1.4 weights for HD Face & Teeth Restoration
+
+        # 2. Clone official CodeFormer repository & download checkpoints
+        "git clone https://github.com/sczhou/CodeFormer.git /CodeFormer",
+        "mkdir -p /CodeFormer/weights/CodeFormer",
+        "mkdir -p /CodeFormer/weights/facelib",
+        "curl -L -o /CodeFormer/weights/CodeFormer/codeformer.pth https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth",
+        "curl -L -o /CodeFormer/weights/facelib/yolov5l-face.pth https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/yolov5l-face.pth",
+        "curl -L -o /CodeFormer/weights/facelib/parsing_parsenet.pth https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/parsing_parsenet.pth",
+        "curl -L -o /CodeFormer/weights/facelib/detection_Resnet50_Final.pth https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/detection_Resnet50_Final.pth",
+
+        # 3. GFPGAN v1.4 checkpoint & facexlib cache
+        "mkdir -p /root/.cache/facexlib/weights",
         "curl -L -o /Wav2Lip/checkpoints/GFPGANv1.4.pth https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
         "curl -L -o /root/.cache/facexlib/weights/detection_Resnet50_Final.pth https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth",
         "curl -L -o /root/.cache/facexlib/weights/parsing_parsenet.pth https://github.com/xinntao/facexlib/releases/download/v0.2.2/parsing_parsenet.pth",
@@ -68,6 +75,8 @@ class LipSyncRequest(BaseModel):
     pads: Optional[str] = "0 10 0 0"  # default padding [top, bottom, left, right]
     resize_factor: Optional[int] = 1
     enable_hd_restoration: Optional[bool] = True
+    restorer_type: Optional[str] = "codeformer"  # "codeformer" | "gfpgan"
+    fidelity: Optional[float] = 0.7  # 0.7 balance for CodeFormer (0.0=max enhance, 1.0=max identity)
     cloudinary_cloud_name: Optional[str] = None
     cloudinary_upload_preset: Optional[str] = None
     cloudinary_api_key: Optional[str] = None
@@ -85,11 +94,50 @@ def download_file(url: str, destination: str):
         shutil.copyfileobj(response, out_file)
 
 
-def enhance_video_with_gfpgan(input_path: str, output_path: str):
+def restore_face_hd(input_video_path: str, output_video_path: str, restorer_type: str = "codeformer", fidelity: float = 0.7):
     """
-    Enhances lip-synced video frames using GFPGAN v1.4 face restoration.
-    Restores crisp 1080p teeth, lips, and facial textures, eliminating Wav2Lip 96x96 blur.
+    Restores crisp 1080p facial features (teeth, lips, skin) using CodeFormer or GFPGAN.
     """
+    if restorer_type == "codeformer":
+        print(f"[HD Restoration] Running CodeFormer (Fidelity w={fidelity})...")
+        out_dir = os.path.dirname(output_video_path)
+        cmd = [
+            "python",
+            "/CodeFormer/inference_codeformer.py",
+            "--video_path", input_video_path,
+            "--w", str(fidelity),
+            "--has_aligned", "False",
+            "--bg_upsampler", "None",
+            "-o", out_dir,
+        ]
+        res = subprocess.run(cmd, cwd="/CodeFormer", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        # Check generated file in results folder
+        result_vid = os.path.join(out_dir, os.path.splitext(os.path.basename(input_video_path))[0] + "_0.7.mp4")
+        if not os.path.exists(result_vid):
+            # Check any mp4 in output directory
+            candidates = [os.path.join(out_dir, f) for f in os.listdir(out_dir) if f.endswith(".mp4") and f != os.path.basename(input_video_path)]
+            if candidates:
+                result_vid = candidates[-1]
+
+        if os.path.exists(result_vid):
+            # Remux enhanced video with audio from input_video_path
+            subprocess.run([
+                "ffmpeg", "-y",
+                "-i", result_vid,
+                "-i", input_video_path,
+                "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
+                "-map", "0:v:0",
+                "-map", "1:a:0?",
+                "-c:a", "aac", "-b:a", "192k",
+                output_video_path,
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return
+
+        print(f"[CodeFormer] Warning: CodeFormer script output not found ({res.stderr[:200]}), falling back to GFPGAN...")
+
+    # GFPGAN Fallback / Selected Restorer
+    print("[HD Restoration] Running GFPGAN v1.4...")
     import cv2
     try:
         from gfpgan import GFPGANer
@@ -103,24 +151,22 @@ def enhance_video_with_gfpgan(input_path: str, output_path: str):
         )
     except Exception as e:
         print(f"[GFPGAN] Warning: Failed to initialize GFPGAN ({e}), using standard output.")
-        shutil.copy(input_path, output_path)
+        shutil.copy(input_video_path, output_video_path)
         return
 
-    cap = cv2.VideoCapture(input_path)
+    cap = cv2.VideoCapture(input_video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    temp_frames_vid = input_path + ".enhanced_raw.mp4"
+    temp_frames_vid = input_video_path + ".gfpgan_raw.mp4"
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(temp_frames_vid, fourcc, fps, (width, height))
 
-    frame_count = 0
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        frame_count += 1
         try:
             _, _, restored_face = restorer.enhance(
                 frame,
@@ -135,19 +181,17 @@ def enhance_video_with_gfpgan(input_path: str, output_path: str):
 
     cap.release()
     out.release()
-    print(f"[GFPGAN] Restored {frame_count} frames to 1080p HD quality.")
 
-    # Remux enhanced frames with original audio stream
     subprocess.run(
         [
             "ffmpeg", "-y",
             "-i", temp_frames_vid,
-            "-i", input_path,
+            "-i", input_video_path,
             "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
             "-map", "0:v:0",
             "-map", "1:a:0?",
             "-c:a", "aac", "-b:a", "192k",
-            output_path,
+            output_video_path,
         ],
         check=True,
         stdout=subprocess.PIPE,
@@ -167,10 +211,10 @@ def enhance_video_with_gfpgan(input_path: str, output_path: str):
 @modal.fastapi_endpoint(method="POST")
 def generate(req: LipSyncRequest):
     """
-    Generates lip-synced video using Wav2Lip GAN + GFPGAN HD Face Restoration.
+    Generates lip-synced video using Wav2Lip GAN + CodeFormer / GFPGAN HD Face Restoration.
     Supports both:
     1. Name-Slot Mode: Slices video to [start_time, end_time], animates only that snippet,
-       restores teeth/lips to HD with GFPGAN, and stitches back into original video.
+       restores teeth/lips to 1080p HD, and stitches back into original video.
     2. Full Script Mode: Animates and restores the entire video.
     """
     if not req.video_url or not req.audio_url:
@@ -208,6 +252,9 @@ def generate(req: LipSyncRequest):
             and req.end_time is not None
             and req.end_time > req.start_time
         )
+
+        restorer = req.restorer_type or "codeformer"
+        fidelity = req.fidelity if req.fidelity is not None else 0.7
 
         if is_name_slot:
             print(f"[Modal] Running Name-Slot Mode from {req.start_time}s to {req.end_time}s")
@@ -267,10 +314,9 @@ def generate(req: LipSyncRequest):
                     detail=f"Wav2Lip slot inference failed: {error_details}",
                 )
 
-            # Step 2b: Apply GFPGAN HD Face & Teeth Restoration on the slot
+            # Step 2b: Apply CodeFormer / GFPGAN HD Face & Teeth Restoration on the slot
             if req.enable_hd_restoration is not False:
-                print("[Modal] Applying GFPGAN HD face restoration on slot frames...")
-                enhance_video_with_gfpgan(subclip_synced, subclip_hd)
+                restore_face_hd(subclip_synced, subclip_hd, restorer_type=restorer, fidelity=fidelity)
             else:
                 shutil.copy(subclip_synced, subclip_hd)
 
@@ -386,10 +432,9 @@ def generate(req: LipSyncRequest):
                     detail=f"Wav2Lip inference failed: {error_details}",
                 )
 
-            # Apply GFPGAN HD Face & Teeth Restoration on full video
+            # Apply CodeFormer / GFPGAN HD Face & Teeth Restoration on full video
             if req.enable_hd_restoration is not False:
-                print("[Modal] Applying GFPGAN HD face restoration on full video...")
-                enhance_video_with_gfpgan(raw_full_video, output_video)
+                restore_face_hd(raw_full_video, output_video, restorer_type=restorer, fidelity=fidelity)
             else:
                 shutil.copy(raw_full_video, output_video)
 
