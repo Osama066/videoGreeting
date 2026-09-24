@@ -30,15 +30,8 @@ export default function AdminPage() {
   // Upload master video state
   const [uploadFile, setUploadFile] = useState(null);
   const [videoTitle, setVideoTitle] = useState('');
-  const [uploadMode, setUploadMode] = useState('name_slot');
-  const [uploadSlotStart, setUploadSlotStart] = useState(1.0);
-  const [uploadSlotEnd, setUploadSlotEnd] = useState(2.6);
-  const [uploadPrefix, setUploadPrefix] = useState('Hello');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
-
-  // Editing state for existing videos: map of videoId -> { mode, nameSlotStart, nameSlotEnd, prefixPhrase, suffixPhrase, saving, saveMsg }
-  const [videoEdits, setVideoEdits] = useState({});
 
   // Leads search
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,10 +85,6 @@ export default function AdminPage() {
     if (videoTitle.trim()) {
       formData.append('title', videoTitle.trim());
     }
-    formData.append('mode', uploadMode);
-    formData.append('nameSlotStart', uploadSlotStart);
-    formData.append('nameSlotEnd', uploadSlotEnd);
-    formData.append('prefixPhrase', uploadPrefix);
 
     try {
       const res = await fetch('/api/admin/master-video', {
@@ -312,68 +301,11 @@ export default function AdminPage() {
                 />
               </div>
 
-              <div className="form-group">
-                <label className="form-label">Generation Mode</label>
-                <select
-                  className="form-input"
-                  value={uploadMode}
-                  onChange={(e) => setUploadMode(e.target.value)}
-                >
-                  <option value="name_slot">⚡ Name-Slot Mode (~90% Cheaper & 10x Faster)</option>
-                  <option value="full_video">Full Script Mode (Rerenders entire video)</option>
-                </select>
-              </div>
-
-              {uploadMode === 'name_slot' && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '14px', borderRadius: 'var(--radius-sm)', marginBottom: '16px', border: '1px solid var(--border-subtle)' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--accent-primary)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Clock size={14} />
-                    <span>Name Slot Timing & Prefix</span>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-                    <div>
-                      <label className="form-label" style={{ fontSize: '0.78rem' }}>Start Time (s)</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        className="form-input"
-                        value={uploadSlotStart}
-                        onChange={(e) => setUploadSlotStart(parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div>
-                      <label className="form-label" style={{ fontSize: '0.78rem' }}>End Time (s)</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0.1"
-                        className="form-input"
-                        value={uploadSlotEnd}
-                        onChange={(e) => setUploadSlotEnd(parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="form-label" style={{ fontSize: '0.78rem' }}>Spoken Prefix Phrase</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. Hello"
-                      value={uploadPrefix}
-                      onChange={(e) => setUploadPrefix(e.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-
               <button
                 type="submit"
                 className="btn-primary"
                 disabled={isUploading}
-                style={{ width: '100%', marginTop: '8px' }}
+                style={{ width: '100%', marginTop: '12px' }}
               >
                 {isUploading ? (
                   <>
