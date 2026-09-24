@@ -25,12 +25,8 @@ services:
         value: voicegreeting
       - key: CLOUDINARY_FOLDER
         value: voice
-      - key: CLOUDINARY_API_KEY
-        sync: false
-      - key: CLOUDINARY_API_SECRET
-        sync: false
       - key: MODAL_WAV2LIP_ENDPOINT
-        sync: false
+        value: https://pictureofevent360--ai-greeting-wav2lip-generate.modal.run
 
   # -----------------------------------------------------------
   # 2. Frontend Static Site (React + Vite SPA)
