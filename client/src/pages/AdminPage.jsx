@@ -192,7 +192,7 @@ export default function AdminPage() {
   });
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px 24px' }}>
+    <div style={{ maxWidth: '1360px', margin: '0 auto', padding: '40px 24px', boxSizing: 'border-box' }}>
       {/* Page Header */}
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
         <div>
@@ -267,9 +267,14 @@ export default function AdminPage() {
 
       {/* TAB 1: Master Videos */}
       {activeTab === 'master-videos' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '32px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+          gap: '28px',
+          alignItems: 'start',
+        }}>
           {/* Upload Card */}
-          <div className="glass-panel" style={{ padding: '28px' }}>
+          <div className="glass-panel" style={{ padding: '24px', maxWidth: '440px', width: '100%', boxSizing: 'border-box' }}>
             <h2 style={{ fontSize: '1.2rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <UploadCloud size={20} color="var(--accent-primary)" />
               <span>Upload New Master Video</span>
@@ -669,15 +674,15 @@ function MasterVideoCard({ video, onActivate, onDelete, onSaveSettings }) {
       </div>
 
       {/* Main Grid: Video Player + Settings */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 260px) 1fr', gap: '20px', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', alignItems: 'start' }}>
         {/* Video Box */}
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', background: '#000', border: '1px solid var(--border-subtle)' }}>
             <video
               ref={videoRef}
               src={video.cloudinaryUrl}
               controls
-              style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '180px', objectFit: 'cover' }}
+              style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '200px', objectFit: 'cover' }}
             />
           </div>
 
@@ -689,9 +694,9 @@ function MasterVideoCard({ video, onActivate, onDelete, onSaveSettings }) {
               disabled={isPlayingSlot}
               style={{
                 width: '100%',
-                marginTop: '8px',
-                padding: '6px 10px',
-                fontSize: '0.78rem',
+                marginTop: '10px',
+                padding: '8px 12px',
+                fontSize: '0.8rem',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -707,16 +712,16 @@ function MasterVideoCard({ video, onActivate, onDelete, onSaveSettings }) {
         </div>
 
         {/* Configuration Controls */}
-        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', minWidth: 0 }}>
           <div className="form-group" style={{ marginBottom: '12px' }}>
             <label className="form-label" style={{ fontSize: '0.8rem' }}>Generation Mode</label>
             <select
               className="form-input"
-              style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+              style={{ padding: '8px 10px', fontSize: '0.84rem', width: '100%', textOverflow: 'ellipsis' }}
               value={mode}
               onChange={(e) => setMode(e.target.value)}
             >
-              <option value="name_slot">⚡ Name-Slot Mode (Fast ~3s & 90% Cost Reduction)</option>
+              <option value="name_slot">⚡ Name-Slot Mode (Fast ~3s & ~90% Cost Saving)</option>
               <option value="full_video">Full Script Mode (Rerender whole video ~25s)</option>
             </select>
           </div>
@@ -724,26 +729,26 @@ function MasterVideoCard({ video, onActivate, onDelete, onSaveSettings }) {
           {isSlotMode && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
-                <div>
-                  <label className="form-label" style={{ fontSize: '0.76rem' }}>Name Slot Start (seconds)</label>
+                <div style={{ minWidth: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.76rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Start Time (s)</label>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     className="form-input"
-                    style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                    style={{ padding: '8px 10px', fontSize: '0.85rem', width: '100%' }}
                     value={start}
                     onChange={(e) => setStart(parseFloat(e.target.value) || 0)}
                   />
                 </div>
-                <div>
-                  <label className="form-label" style={{ fontSize: '0.76rem' }}>Name Slot End (seconds)</label>
+                <div style={{ minWidth: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.76rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>End Time (s)</label>
                   <input
                     type="number"
                     step="0.1"
                     min="0.1"
                     className="form-input"
-                    style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                    style={{ padding: '8px 10px', fontSize: '0.85rem', width: '100%' }}
                     value={end}
                     onChange={(e) => setEnd(parseFloat(e.target.value) || 0)}
                   />
@@ -751,11 +756,11 @@ function MasterVideoCard({ video, onActivate, onDelete, onSaveSettings }) {
               </div>
 
               <div className="form-group" style={{ marginBottom: '12px' }}>
-                <label className="form-label" style={{ fontSize: '0.76rem' }}>Spoken Prefix Phrase (Before Name)</label>
+                <label className="form-label" style={{ fontSize: '0.76rem' }}>Prefix Phrase (e.g. Hello)</label>
                 <input
                   type="text"
                   className="form-input"
-                  style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                  style={{ padding: '8px 10px', fontSize: '0.85rem', width: '100%' }}
                   placeholder="e.g. Hello"
                   value={prefix}
                   onChange={(e) => setPrefix(e.target.value)}
