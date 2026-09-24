@@ -12,8 +12,8 @@ from pydantic import BaseModel
 # ---------------------------------------------------------------------------
 # Modal Container Image Definition
 # ---------------------------------------------------------------------------
-# Pre-bakes dependencies, clones Wav2Lip, and downloads model checkpoints
-# so cold-starts are as fast as possible.
+# Pre-bakes dependencies, clones Wav2Lip, downloads GFPGAN v1.4 weights,
+# and caches face restoration models for fast GPU execution.
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install("git", "ffmpeg", "libgl1-mesa-glx", "libglib2.0-0", "curl")
@@ -31,6 +31,9 @@ image = (
         "pydantic==2.6.4",
         "requests==2.31.0",
         "cloudinary==1.38.0",
+        "gfpgan==1.3.8",
+        "facexlib>=0.2.5",
+        "basicsr>=1.4.2",
     )
     .run_commands(
         # 1. Clone official Wav2Lip repository
@@ -38,10 +41,15 @@ image = (
         # 2. Create directory for face detection & checkpoints
         "mkdir -p /Wav2Lip/face_detection/detection/sfd",
         "mkdir -p /Wav2Lip/checkpoints",
+        "mkdir -p /root/.cache/facexlib/weights",
         # 3. Download S3FD Face Detection weights
         "curl -L -o /Wav2Lip/face_detection/detection/sfd/s3fd.pth https://huggingface.co/camenduru/Wav2Lip/resolve/main/face_detection/detection/sfd/s3fd.pth",
         # 4. Download Pre-trained Wav2Lip GAN weights (High-fidelity lip sync)
         "curl -L -o /Wav2Lip/checkpoints/wav2lip_gan.pth https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/wav2lip_gan.pth",
+        # 5. Download GFPGAN v1.4 weights for HD Face & Teeth Restoration
+        "curl -L -o /Wav2Lip/checkpoints/GFPGANv1.4.pth https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
+        "curl -L -o /root/.cache/facexlib/weights/detection_Resnet50_Final.pth https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth",
+        "curl -L -o /root/.cache/facexlib/weights/parsing_parsenet.pth https://github.com/xinntao/facexlib/releases/download/v0.2.2/parsing_parsenet.pth",
     )
 )
 
@@ -55,6 +63,7 @@ class LipSyncRequest(BaseModel):
     end_time: Optional[float] = None
     pads: Optional[str] = "0 10 0 0"  # default padding [top, bottom, left, right]
     resize_factor: Optional[int] = 1
+    enable_hd_restoration: Optional[bool] = True
     cloudinary_cloud_name: Optional[str] = None
     cloudinary_upload_preset: Optional[str] = None
     cloudinary_api_key: Optional[str] = None
@@ -72,6 +81,79 @@ def download_file(url: str, destination: str):
         shutil.copyfileobj(response, out_file)
 
 
+def enhance_video_with_gfpgan(input_path: str, output_path: str):
+    """
+    Enhances lip-synced video frames using GFPGAN v1.4 face restoration.
+    Restores crisp 1080p teeth, lips, and facial textures, eliminating Wav2Lip 96x96 blur.
+    """
+    import cv2
+    try:
+        from gfpgan import GFPGANer
+        restorer = GFPGANer(
+            model_path="/Wav2Lip/checkpoints/GFPGANv1.4.pth",
+            upscale=1,
+            arch="clean",
+            channel_multiplier=2,
+            bg_upsampler=None,
+            device="cuda",
+        )
+    except Exception as e:
+        print(f"[GFPGAN] Warning: Failed to initialize GFPGAN ({e}), using standard output.")
+        shutil.copy(input_path, output_path)
+        return
+
+    cap = cv2.VideoCapture(input_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    temp_frames_vid = input_path + ".enhanced_raw.mp4"
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(temp_frames_vid, fourcc, fps, (width, height))
+
+    frame_count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame_count += 1
+        try:
+            _, _, restored_face = restorer.enhance(
+                frame,
+                has_aligned=False,
+                only_center_face=True,
+                paste_back=True,
+                weight=0.5,
+            )
+            out.write(restored_face)
+        except Exception:
+            out.write(frame)
+
+    cap.release()
+    out.release()
+    print(f"[GFPGAN] Restored {frame_count} frames to 1080p HD quality.")
+
+    # Remux enhanced frames with original audio stream
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", temp_frames_vid,
+            "-i", input_path,
+            "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
+            "-map", "0:v:0",
+            "-map", "1:a:0?",
+            "-c:a", "aac", "-b:a", "192k",
+            output_path,
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    if os.path.exists(temp_frames_vid):
+        os.remove(temp_frames_vid)
+
+
 @app.function(
     image=image,
     gpu="T4",
@@ -81,11 +163,11 @@ def download_file(url: str, destination: str):
 @modal.fastapi_endpoint(method="POST")
 def generate(req: LipSyncRequest):
     """
-    Generates lip-synced video using Wav2Lip GAN on serverless GPU.
+    Generates lip-synced video using Wav2Lip GAN + GFPGAN HD Face Restoration.
     Supports both:
     1. Name-Slot Mode: Slices video to [start_time, end_time], animates only that snippet,
-       and stitches back into original video for crystal-clear quality and 10x faster rendering.
-    2. Full Script Mode: Animates the entire video.
+       restores teeth/lips to HD with GFPGAN, and stitches back into original video.
+    2. Full Script Mode: Animates and restores the entire video.
     """
     if not req.video_url or not req.audio_url:
         raise HTTPException(status_code=400, detail="video_url and audio_url are required.")
@@ -127,6 +209,7 @@ def generate(req: LipSyncRequest):
             print(f"[Modal] Running Name-Slot Mode from {req.start_time}s to {req.end_time}s")
             subclip_input = os.path.join(work_dir, "subclip_raw.mp4")
             subclip_synced = os.path.join(work_dir, "subclip_synced.mp4")
+            subclip_hd = os.path.join(work_dir, "subclip_hd.mp4")
             part1_file = os.path.join(work_dir, "part1.mp4")
             part3_file = os.path.join(work_dir, "part3.mp4")
 
@@ -180,12 +263,19 @@ def generate(req: LipSyncRequest):
                     detail=f"Wav2Lip slot inference failed: {error_details}",
                 )
 
+            # Step 2b: Apply GFPGAN HD Face & Teeth Restoration on the slot
+            if req.enable_hd_restoration is not False:
+                print("[Modal] Applying GFPGAN HD face restoration on slot frames...")
+                enhance_video_with_gfpgan(subclip_synced, subclip_hd)
+            else:
+                shutil.copy(subclip_synced, subclip_hd)
+
             # Re-encode subclip with standardized audio stream
             subclip_synced_clean = os.path.join(work_dir, "subclip_clean.mp4")
             subprocess.run(
                 [
                     "ffmpeg", "-y",
-                    "-i", subclip_synced,
+                    "-i", subclip_hd,
                     "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
                     subclip_synced_clean,
@@ -215,7 +305,7 @@ def generate(req: LipSyncRequest):
                 )
                 concat_files.append(part1_file)
 
-            # Part 2 (Synced Name Slot)
+            # Part 2 (Synced & Restored Name Slot)
             concat_files.append(subclip_synced_clean)
 
             # Part 3 (After name slot to end of video)
@@ -258,6 +348,7 @@ def generate(req: LipSyncRequest):
         else:
             # Full Video Mode: Run inference on whole video
             print("[Modal] Running Full Video Mode...")
+            raw_full_video = os.path.join(work_dir, "raw_full_synced.mp4")
             cmd = [
                 "python",
                 "/Wav2Lip/inference.py",
@@ -268,7 +359,7 @@ def generate(req: LipSyncRequest):
                 "--audio",
                 audio_wav,
                 "--outfile",
-                output_video,
+                raw_full_video,
                 "--pads",
                 *pads_args,
                 "--resize_factor",
@@ -284,12 +375,19 @@ def generate(req: LipSyncRequest):
                 text=True,
             )
 
-            if result.returncode != 0 or not os.path.exists(output_video):
+            if result.returncode != 0 or not os.path.exists(raw_full_video):
                 error_details = result.stderr[-1000:] if result.stderr else "Unknown error"
                 raise HTTPException(
                     status_code=500,
                     detail=f"Wav2Lip inference failed: {error_details}",
                 )
+
+            # Apply GFPGAN HD Face & Teeth Restoration on full video
+            if req.enable_hd_restoration is not False:
+                print("[Modal] Applying GFPGAN HD face restoration on full video...")
+                enhance_video_with_gfpgan(raw_full_video, output_video)
+            else:
+                shutil.copy(raw_full_video, output_video)
 
         # Step 3: Optional direct upload to Cloudinary
         cloud_name = req.cloudinary_cloud_name or os.environ.get("CLOUDINARY_CLOUD_NAME")
